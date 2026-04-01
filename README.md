@@ -24,8 +24,14 @@ Enter your name and email, and the tool generates:
 
 ## Screenshots
 
+### Landing Page
 ![Landing Page](public/screenshots/home.png)
+
+### Results Page
 ![Results Page](public/screenshots/results.png)
+
+### Filled Score View
+![Filled Score View](public/screenshots/filled.png)
 
 ---
 
