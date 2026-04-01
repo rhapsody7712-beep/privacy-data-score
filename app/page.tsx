@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Shield, TrendingUp, Eye, Lock, ArrowRight, Zap } from 'lucide-react';
 
 export default function LandingPage() {
@@ -35,7 +36,7 @@ export default function LandingPage() {
         </div>
         <div className="hidden md:flex items-center gap-6 text-sm text-white/50">
           <span className="hover:text-white/80 cursor-pointer transition-colors">How It Works</span>
-          <span className="hover:text-white/80 cursor-pointer transition-colors">Privacy Guide</span>
+          <Link href="/privacy-rights" className="hover:text-white/80 cursor-pointer transition-colors">Privacy Rights</Link>
           <span className="text-white/20">|</span>
           <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded-full border border-green-500/20">Free Scan</span>
         </div>

@@ -1,62 +1,113 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 
-const client = new Anthropic();
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
-  const { breakdown, totalScore, riskLevel, dataValue } = await req.json();
+  const {
+    name,
+    totalScore,
+    dataValue,
+    riskLevel,
+    breakdown,
+    breachMeta,
+  } = await req.json();
 
-  const prompt = `You are a privacy expert analyzing someone's data exposure profile. Based on their privacy score data, generate personalized insights and recommendations.
+  // Build a rich breach context string for Claude
+  const breachContext = breachMeta?.totalBreaches > 0
+    ? `
+REAL BREACH DATA (from HaveIBeenPwned):
+- Found in ${breachMeta.totalBreaches} known data breaches
+- ${breachMeta.verifiedBreaches} verified breaches, ${breachMeta.sensitiveBreaches} sensitive breaches
+- Most recent breach: ${breachMeta.mostRecentBreach ?? 'unknown'}
+- Exposed data types: ${breachMeta.exposedDataTypes?.join(', ') || 'unknown'}
+- Password exposed: ${breachMeta.hasPasswordExposure ? 'YES — critical' : 'No'}
+- Financial data exposed: ${breachMeta.hasFinancialExposure ? 'YES — critical' : 'No'}
+- Behavioral data exposed: ${breachMeta.hasBehavioralExposure ? 'YES' : 'No'}
+- Sensitive breaches: ${breachMeta.hasSensitiveExposure ? 'YES' : 'No'}
+- Top breaches: ${breachMeta.topBreaches?.map((b: { name: string; date: string; dataTypes: string[] }) =>
+    `${b.name} (${b.date}, exposed: ${b.dataTypes.join(', ')})`
+  ).join(' | ') || 'none'}
+`
+    : `
+BREACH DATA: This email was NOT found in any known data breaches (clean record).
+`;
 
-Data Profile:
-- Total Privacy Score: ${totalScore}/1000 (higher = more exposed)
-- Risk Level: ${riskLevel}
-- Estimated Data Value: $${dataValue}
-- Breakdown scores (0-100, higher = more exposed):
-  * Demographic Value: ${breakdown.demographicValue}
-  * Behavioral Signals: ${breakdown.behavioralSignals}
-  * Purchase Intent Score: ${breakdown.purchaseIntent}
-  * Data Exposure Level: ${breakdown.dataExposure}
-  * Consent Control Level: ${breakdown.consentLevel}
+  const prompt = `You are a data privacy expert analyzing someone's Privacy Data Score.
 
-Generate exactly this JSON structure (no markdown, no extra text):
+User: ${name}
+Privacy Score: ${totalScore}/1000
+Estimated Data Value: $${dataValue}
+Risk Level: ${riskLevel}
+
+Score Breakdown:
+- Demographic Value: ${breakdown.demographicValue}/100
+- Behavioral Signals: ${breakdown.behavioralSignals}/100
+- Purchase Intent: ${breakdown.purchaseIntent}/100
+- Data Exposure: ${breakdown.dataExposure}/100
+- Consent Control: ${breakdown.consentLevel}/100
+
+${breachContext}
+
+Generate a JSON object ONLY — no markdown, no backticks, no explanation. Use this exact structure:
 {
   "insights": [
-    "First specific insight about their data situation (2 sentences, specific to their scores)",
-    "Second specific insight about their highest risk area (2 sentences)",
-    "Third insight about market implications of their data value (2 sentences)"
+    "Specific insight about their breach exposure using the real data above",
+    "Specific insight about behavioral/demographic data risks",
+    "Specific insight about their overall financial risk from this exposure"
   ],
   "recommendations": [
-    "First actionable recommendation with specific steps",
-    "Second actionable recommendation",
-    "Third actionable recommendation"
+    "Specific action based on their actual breach history",
+    "Specific action to reduce behavioral tracking",
+    "Specific action to protect their most exposed data type"
   ]
-}`;
+}
+
+Rules:
+- Be specific — use the actual breach names, data types, and dates from above
+- If passwords were exposed, lead with urgency about credential stuffing
+- If financial data was exposed, mention specific fraud risks
+- Keep each item to 1-2 punchy sentences
+- Use numbers and specifics — avoid generic advice`;
 
   try {
-    const message = await client.messages.create({
+    const response = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
+      max_tokens: 700,
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = message.content[0].type === 'text' ? message.content[0].text : '{}';
-    const parsed = JSON.parse(text);
-
+    const text = (response.content[0] as { type: string; text: string }).text;
+    const parsed = JSON.parse(text.trim());
     return NextResponse.json(parsed);
-  } catch (error) {
-    // Fallback insights if API fails
+
+  } catch (err) {
+    console.error('Insights API error:', err);
+
+    // Intelligent fallback using real breach data
+    const hasBreaches   = breachMeta?.totalBreaches > 0;
+    const breachNames   = breachMeta?.topBreaches?.map((b: { name: string }) => b.name).join(', ') || '';
+    const exposedTypes  = breachMeta?.exposedDataTypes?.slice(0, 3).join(', ') || 'personal data';
+
     return NextResponse.json({
-      insights: [
-        `With a score of ${totalScore}/1000 and ${riskLevel} risk level, your data profile is actively traded among data brokers. Your behavioral signals score of ${breakdown.behavioralSignals}/100 suggests significant online activity is being tracked.`,
-        `Your estimated data value of $${dataValue} puts you in the ${riskLevel === 'High' ? 'top tier' : 'mid-range'} of consumer data profiles. Data brokers typically sell profiles like yours to advertisers, insurers, and financial institutions.`,
-        `Your consent control score of ${breakdown.consentLevel}/100 indicates you have ${breakdown.consentLevel > 50 ? 'some' : 'very limited'} control over how your data is used. Most data sharing happens without your explicit knowledge.`
+      insights: hasBreaches ? [
+        `Your email appeared in ${breachMeta.totalBreaches} data breaches (${breachNames}) — your profile is actively circulating among data brokers and on dark web markets.`,
+        `The breach exposure of your ${exposedTypes} means advertisers and data brokers can cross-reference your identity across ${Math.round(breachMeta.totalBreaches * 3)} linked databases.`,
+        `At $${dataValue} estimated value, your data profile is ${dataValue > 400 ? 'significantly above' : 'near'} the US average — making you a recurring target for credential stuffing and targeted phishing.`,
+      ] : [
+        `Your email has no known breach history — that's rare and valuable. Your score of ${totalScore} is driven primarily by ambient data broker activity rather than direct breach exposure.`,
+        `Even without breach exposure, your behavioral and demographic data is estimated at $${dataValue} — data brokers build profiles from public records, social signals, and purchase behavior.`,
+        `Your clean breach record is an asset to protect. Maintaining strong password hygiene and limiting third-party app permissions will keep your score low.`,
       ],
-      recommendations: [
-        'Submit opt-out requests to the top 10 data brokers listed below — this alone can reduce your exposure score by 30-40% within 90 days.',
-        'Enable two-factor authentication and use a unique email alias (like yourname+shopping@gmail.com) for retail and newsletter signups to segment your data trail.',
-        'Review and revoke app permissions monthly. Many apps sell location and behavioral data — focus on shopping, weather, and gaming apps first.'
-      ]
+      recommendations: hasBreaches ? [
+        `${breachMeta.hasPasswordExposure ? 'URGENT: Change passwords on all accounts immediately — your credentials were directly exposed. Use a password manager like 1Password or Bitwarden.' : `Submit opt-out requests to the top 5 data brokers that hold your ${exposedTypes} — this can reduce your score by 15–20% within 30 days.`}`,
+        'Enable login alerts and two-factor authentication on all financial, email, and social accounts — your exposed data makes credential stuffing attacks 3x more likely.',
+        `Monitor your credit report at annualcreditreport.com and consider a credit freeze at all three bureaus${breachMeta.hasFinancialExposure ? ' — your financial data was directly exposed' : ''}.`,
+      ] : [
+        'Submit opt-out requests to Acxiom, Spokeo, BeenVerified, and Whitepages — even without breach exposure, these brokers build profiles from public records.',
+        'Enable Global Privacy Control (GPC) in your browser settings and audit third-party app permissions on your phone quarterly.',
+        'Review and minimize data sharing on Google, Amazon, and Meta accounts — these are the primary feeds into commercial data broker databases.',
+      ],
     });
   }
 }
