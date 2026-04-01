@@ -22,6 +22,13 @@ Enter your name and email, and the tool generates:
 
 ---
 
+## Screenshots
+
+![Landing Page](public/screenshots/home.png)
+![Results Page](public/screenshots/results.png)
+
+---
+
 ## Why I Built This
 
 Data privacy is invisible to most people — and that invisibility is by design. Brokers profit from information asymmetry. This tool flips that by making your data exposure concrete, quantified, and actionable.
